@@ -4,6 +4,8 @@ import ListingGenerator from './components/ListingGenerator';
 import SettingsModal from './components/SettingsModal';
 import HistoryModal from './components/HistoryModal';
 import { geminiService } from './services/geminiService';
+import { ebayService } from './services/ebayService'; // Added import
+import { chatGptService } from './services/chatGptService'; // Added import
 import { databaseService } from './services/databaseService';
 import { ApiKeys, ListingDraft } from './types';
 
