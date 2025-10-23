@@ -1,0 +1,7 @@
+{
+  "name": "Item Identifier & eBay Listing Assistant",
+  "description": "This application helps users identify items from camera or local storage images using Gemini, then suggests an eBay listing based on 'Sold Items' data. It offers optional input fields for ChatGPT and eBay API keys, but the Gemini API key is loaded exclusively from the environment variable `process.env.API_KEY` as per security guidelines.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
