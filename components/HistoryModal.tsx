@@ -47,9 +47,9 @@ const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) => {
             {listings.map((listing, index) => (
               <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700 shadow-sm">
                 <h3 className="font-bold text-gray-800 dark:text-gray-100 text-lg mb-2">{listing.suggestedTitle}</h3>
-                {listing.imageUrl && (
+                {listing.base64Image && listing.mimeType && (
                   <div className="mb-3">
-                    <img src={listing.imageUrl} alt="Item thumbnail" className="max-h-24 rounded-md shadow-sm" />
+                    <img src={`data:${listing.mimeType};base64,${listing.base64Image}`} alt="Item thumbnail" className="max-h-24 rounded-md shadow-sm" />
                   </div>
                 )}
                 <p className="text-sm text-gray-700 dark:text-gray-200 mb-1"><strong className="text-gray-900 dark:text-gray-100">Category:</strong> {listing.suggestedCategory}</p>

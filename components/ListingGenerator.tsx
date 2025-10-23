@@ -8,7 +8,7 @@ interface ListingGeneratorProps {
   itemDescription: string;
   itemCategory: string;
   base64Image: string;
-  imageUrl: string;
+  mimeType: string;
   ebayApiKey: string;
   chatGptApiKey: string;
   onListingGenerated: (listing: ListingDraft) => void;
@@ -18,7 +18,7 @@ const ListingGenerator: React.FC<ListingGeneratorProps> = ({
   itemDescription,
   itemCategory,
   base64Image,
-  imageUrl,
+  mimeType,
   ebayApiKey,
   chatGptApiKey,
   onListingGenerated,
@@ -35,14 +35,14 @@ const ListingGenerator: React.FC<ListingGeneratorProps> = ({
 
       try {
         // Step 1: Search for sold listings on eBay
+        // Calling searchSoldListings without explicit filters for now.
+        // The ebayService will use its default buyingOptions.
         const soldListings: eBayItem[] = await ebayService.searchSoldListings(itemDescription, ebayApiKey);
 
         // Step 2: Get market data from sold listings
         const { marketPriceRange, marketConditionSummary, marketKeywords } = ebayService.getMarketData(soldListings);
 
         // Step 3: Generate listing draft using ChatGPT
-        // Note: For search grounding, we are only using eBay search results here,
-        // so the grounding sources will reflect those eBay listings.
         const groundingSources: GroundingSource[] = soldListings.map(item => ({
           type: 'googleSearch', // Using googleSearch type for general external web results, although it's eBay here.
           uri: item.listingUrl,
@@ -55,11 +55,12 @@ const ListingGenerator: React.FC<ListingGeneratorProps> = ({
           itemCategory,
           soldListings,
           chatGptApiKey,
-          imageUrl,
+          base64Image,
+          mimeType,
           marketPriceRange,
           marketConditionSummary,
           marketKeywords,
-          groundingSources, // Pass grounding sources to chatGptService
+          groundingSources,
         );
 
         setListingDraft(draft);
@@ -76,7 +77,7 @@ const ListingGenerator: React.FC<ListingGeneratorProps> = ({
     if (itemDescription && itemCategory && base64Image) {
       generateListing();
     }
-  }, [itemDescription, itemCategory, base64Image, imageUrl, ebayApiKey, chatGptApiKey, onListingGenerated]);
+  }, [itemDescription, itemCategory, base64Image, mimeType, ebayApiKey, chatGptApiKey, onListingGenerated]);
 
   if (isLoading) {
     return (
@@ -109,9 +110,9 @@ const ListingGenerator: React.FC<ListingGeneratorProps> = ({
       <h2 className="text-xl font-semibold text-green-800 dark:text-green-200 mb-3">Generated Listing Draft</h2>
 
       <div className="flex-grow overflow-y-auto pr-2 custom-scrollbar">
-        {listingDraft.imageUrl && (
+        {listingDraft.base64Image && listingDraft.mimeType && (
           <div className="mb-4 flex justify-center">
-            <img src={listingDraft.imageUrl} alt="Item for listing" className="max-h-48 rounded-md shadow-md object-contain" />
+            <img src={`data:${listingDraft.mimeType};base64,${listingDraft.base64Image}`} alt="Item for listing" className="max-h-48 rounded-md shadow-md object-contain" />
           </div>
         )}
 

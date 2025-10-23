@@ -23,7 +23,8 @@ export interface ListingDraft {
   suggestedCondition: string;
   exampleSoldListings: eBayItem[];
   generatedDate: string;
-  imageUrl?: string;
+  base64Image?: string; // Storing base64 image data
+  mimeType?: string; // Storing mime type for base64 image
   groundingSources?: GroundingSource[]; // Added for search grounding
 }
 

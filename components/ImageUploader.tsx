@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { blobToBase64 } from '../services/geminiService'; // Corrected import path for blobToBase64
 
 interface ImageUploaderProps {
-  onImageSelected: (base64Image: string, mimeType: string, imageUrl: string) => void;
+  onImageSelected: (base64Image: string, mimeType: string) => void; // Removed imageUrl from signature
   isLoading: boolean;
 }
 
@@ -29,14 +29,28 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, isLoadin
   const activateCamera = async () => {
     try {
       setCameraError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      // Relaxed constraint to `video: true` for broader compatibility
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
-    } catch (error) {
+    } catch (error: any) { // Use 'any' to handle potential MediaStreamError
       console.error('Error accessing camera:', error);
-      setCameraError('Could not access camera. Please ensure permissions are granted.');
+      let errorMessage = 'Could not access camera. Please ensure permissions are granted.';
+
+      if (error.name === 'NotAllowedError') {
+        errorMessage = 'Camera access denied. Please allow camera permissions in your browser settings to use this feature.';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = 'No camera found. Please ensure a camera is connected and enabled.';
+      } else if (error.name === 'NotReadableError') {
+        errorMessage = 'Camera is in use by another application or not available.';
+      } else if (error.name === 'OverconstrainedError') {
+        errorMessage = 'Camera constraints could not be satisfied. Try different camera settings.';
+      } else {
+        errorMessage = `Could not access camera: ${error.message}. Please try again or check your system settings.`;
+      }
+      setCameraError(errorMessage);
       setIsCameraActive(false);
     }
   };
@@ -57,7 +71,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, isLoadin
 
       try {
         const base64 = await blobToBase64(file);
-        onImageSelected(base64, file.type, URL.createObjectURL(file));
+        onImageSelected(base64, file.type); // Pass base64 and mimeType
       } catch (error) {
         console.error('Error converting file to base64:', error);
         alert('Failed to process image file.');
@@ -81,7 +95,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, isLoadin
               setImagePreviewUrl(URL.createObjectURL(blob));
               try {
                 const base64 = await blobToBase64(blob);
-                onImageSelected(base64, mimeType, URL.createObjectURL(blob));
+                onImageSelected(base64, mimeType); // Pass base64 and mimeType
                 setIsCameraActive(false); // Deactivate camera after capture
               } catch (error) {
                 console.error('Error converting camera image to base64:', error);
@@ -120,7 +134,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, isLoadin
         </div>
       )}
 
-      {cameraError && <p className="text-red-500 dark:text-red-400 text-sm">{cameraError}</p>}
+      {cameraError && <p className="text-red-500 dark:text-red-400 text-sm mt-2">{cameraError}</p>}
 
       <div className="flex flex-wrap gap-4 justify-center w-full">
         <button

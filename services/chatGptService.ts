@@ -7,7 +7,8 @@ export const chatGptService = {
     itemCategory: string,
     soldListings: eBayItem[],
     chatGptApiKey: string,
-    imageUrl: string, // Added to pass to ListingDraft
+    base64Image: string, // Changed from imageUrl
+    mimeType: string,    // Added
     marketPriceRange: string,
     marketConditionSummary: string,
     marketKeywords: string[],
@@ -35,7 +36,8 @@ export const chatGptService = {
         suggestedCondition: string;
         exampleSoldListings: eBayItem[];
         generatedDate: string;
-        imageUrl?: string;
+        base64Image?: string; // Storing base64 image data
+        mimeType?: string; // Storing mime type for base64 image
         groundingSources?: GroundingSource[];
       }
 
@@ -79,7 +81,8 @@ export const chatGptService = {
       // Add fields that ChatGPT wouldn't generate directly or are from other sources
       listingDraft.exampleSoldListings = soldListings;
       listingDraft.generatedDate = new Date().toLocaleDateString();
-      listingDraft.imageUrl = imageUrl; // Pass the image URL received from props
+      listingDraft.base64Image = base64Image; // Pass the base64 image received
+      listingDraft.mimeType = mimeType; // Pass the mimeType received
       listingDraft.groundingSources = groundingSources; // Pass grounding sources
 
       return listingDraft;

@@ -12,7 +12,7 @@ import { ApiKeys, ListingDraft } from './types';
 const App: React.FC = () => {
   const [selectedBase64Image, setSelectedBase64Image] = useState<string | null>(null);
   const [selectedMimeType, setSelectedMimeType] = useState<string | null>(null);
-  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [currentImagePreviewUrl, setCurrentImagePreviewUrl] = useState<string | null>(null); // State for the current image preview
   const [itemDescriptionFromGemini, setItemDescriptionFromGemini] = useState<string | null>(null);
   const [itemCategoryFromGemini, setItemCategoryFromGemini] = useState<string | null>(null);
   const [isLoadingGemini, setIsLoadingGemini] = useState<boolean>(false);
@@ -47,10 +47,11 @@ const App: React.FC = () => {
     setApiKeys(databaseService.loadApiKeys());
   }, []);
 
-  const handleImageSelected = useCallback((base64Image: string, mimeType: string, imageUrl: string) => {
+  const handleImageSelected = useCallback((base64Image: string, mimeType: string) => { // Removed imageUrl
     setSelectedBase64Image(base64Image);
     setSelectedMimeType(mimeType);
-    setSelectedImageUrl(imageUrl);
+    // Create a temporary URL for immediate preview in App component if needed, but not for persistence
+    setCurrentImagePreviewUrl(`data:${mimeType};base64,${base64Image}`);
     setItemDescriptionFromGemini(null); // Clear previous description
     setItemCategoryFromGemini(null);
     setCurrentListing(null); // Clear previous listing
@@ -99,13 +100,13 @@ const App: React.FC = () => {
     // This logic might need refinement depending on whether API key changes
     // should immediately invalidate existing identified item or only affect new generations.
     // For now, we just ensure the keys are updated. The ListingGenerator re-runs on prop changes.
-    if (itemDescriptionFromGemini && itemCategoryFromGemini && selectedImageUrl && selectedBase64Image) {
+    if (itemDescriptionFromGemini && itemCategoryFromGemini && selectedBase64Image && selectedMimeType) {
       // Intentionally not setting currentListing to null here,
       // as ListingGenerator's useEffect will handle re-generation if its props change.
       // If the goal is to *force* a re-generation immediately on key change,
       // a dedicated state or refetch trigger might be needed.
     }
-  }, [itemDescriptionFromGemini, itemCategoryFromGemini, selectedImageUrl, selectedBase64Image]);
+  }, [itemDescriptionFromGemini, itemCategoryFromGemini, selectedBase64Image, selectedMimeType]); // Included selectedMimeType
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-4xl min-h-[80vh] flex flex-col space-y-8 text-gray-900 dark:text-gray-100">
@@ -173,12 +174,12 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex flex-col space-y-6">
-          {itemDescriptionFromGemini && itemCategoryFromGemini && selectedBase64Image && selectedImageUrl ? (
+          {itemDescriptionFromGemini && itemCategoryFromGemini && selectedBase64Image && selectedMimeType ? (
             <ListingGenerator
               itemDescription={itemDescriptionFromGemini}
               itemCategory={itemCategoryFromGemini}
               base64Image={selectedBase64Image}
-              imageUrl={selectedImageUrl}
+              mimeType={selectedMimeType}
               ebayApiKey={apiKeys.ebayApiKey}
               chatGptApiKey={apiKeys.chatGptApiKey}
               onListingGenerated={handleListingGenerated}

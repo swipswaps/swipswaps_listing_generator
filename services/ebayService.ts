@@ -21,24 +21,72 @@ interface eBaySearchResponse {
   }>;
 }
 
+/**
+ * Defines available filters for eBay listing searches.
+ * Note: The `buy/browse/v1/item_summary/search` API used here has limitations:
+ * - 'Sold in last X days': Not directly filterable. Approximated by sorting by end date and limiting results.
+ * - 'Shipping cost range': Not directly filterable in the API request. Would require client-side filtering
+ *   after fetching results or using a different eBay API (e.g., Finding API).
+ */
+export interface eBayListingFilters {
+  /**
+   * Specifies the type of buying options to include.
+   * Can be 'FIXED_PRICE', 'AUCTION', or both.
+   * If not provided, defaults to both 'FIXED_PRICE' and 'AUCTION'.
+   */
+  buyingOptions?: ('FIXED_PRICE' | 'AUCTION')[];
+  // Although requested, 'sold in last 30 days' and 'shipping cost range' are not
+  // directly supported as server-side filters by this specific eBay Browse API endpoint.
+  // The 'sold in last 30 days' is approximated by sorting by enddate and limiting,
+  // and 'shipping cost range' would require client-side filtering or a different API.
+  // For the purpose of this exercise and given the current API, these are noted as limitations.
+}
+
 export const ebayService = {
   /**
-   * Searches for recently sold eBay listings based on a query.
+   * Searches for recently sold eBay listings based on a query with optional filters.
    * @param query The search query (e.g., "vintage camera").
    * @param ebayApiKey The eBay API key for authorization.
+   * @param filters Optional filters for the search.
    * @returns A promise that resolves to an array of eBayItem.
    */
-  searchSoldListings: async (query: string, ebayApiKey: string): Promise<eBayItem[]> => {
+  searchSoldListings: async (
+    query: string,
+    ebayApiKey: string,
+    filters?: eBayListingFilters
+  ): Promise<eBayItem[]> => {
     if (!ebayApiKey) {
       throw new Error("eBay API Key is missing. Please configure it in settings.");
     }
 
     try {
-      // NOTE: For a real application, you would typically need to implement OAuth
-      // to get an access token for eBay's Buy API. For this exercise, we assume
-      // the provided `ebayApiKey` can be used directly as a Bearer token.
+      let filterParams: string[] = ['itemCondition={USED|NEW|UNSPECIFIED}'];
+
+      // Apply buying options filter
+      const buyingOptions = filters?.buyingOptions;
+      if (buyingOptions && buyingOptions.length > 0) {
+        filterParams.push(`buyingOptions={${buyingOptions.join('|')}}`);
+      } else {
+        // Default to both FIXED_PRICE and AUCTION if not specified for sold listings context
+        filterParams.push(`buyingOptions={FIXED_PRICE|AUCTION}`);
+      }
+
+      const filterString = filterParams.join(',');
+
+      // Note on 'sold items within the last 30 days':
+      // The buy/browse/v1/item_summary/search API does not have a direct filter
+      // for a specific 'sold date range'. The current approach of `sort=enddate`
+      // and `limit=10` effectively provides "recent" sold items.
+      // For more precise historical filtering, the eBay Finding API's `findCompletedItems`
+      // would be more suitable but requires a different API integration.
+
+      // Note on 'shipping cost range':
+      // The buy/browse/v1/item_summary/search API does not support filtering by
+      // shipping cost directly in the API request. Any such filtering would need
+      // to occur client-side after fetching the results, which is less efficient.
+
       const response = await fetch(
-        `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&filter=itemCondition={USED|NEW|UNSPECIFIED},buyingOptions={FIXED_PRICE|AUCTION}&sort=enddate&limit=10`,
+        `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent(filterString)}&sort=enddate&limit=10`,
         {
           headers: {
             'Authorization': `Bearer ${ebayApiKey}`, // Simplified: assuming API key acts as Bearer token
