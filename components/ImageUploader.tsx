@@ -1,6 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-// Fix: Corrected import path for blobToBase64 from services/geminiService.ts
-import { blobToBase64 } from '../services/geminiService';
+import { blobToBase64 } from '../services/geminiService'; // Corrected import path for blobToBase64
 
 interface ImageUploaderProps {
   onImageSelected: (base64Image: string, mimeType: string, imageUrl: string) => void;

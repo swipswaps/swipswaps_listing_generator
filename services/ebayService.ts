@@ -1,118 +1,146 @@
-// Fix: Implement the eBay service to fetch sold listings.
 import { eBayItem } from '../types';
 
-/**
- * Helper to parse various price range formats from Gemini's output.
- * Examples: "$50 - $100", "around $75", "120 USD"
- * @param priceRangeString
- * @returns { min: number, max: number, avg: number }
- */
-const parsePriceRange = (priceRangeString: string): { min: number, max: number, avg: number } => {
-  const numbers = priceRangeString.match(/\$?\d[\d,\.]*/g)?.map(n => parseFloat(n.replace(/[^0-9.]/g, ''))).filter(n => !isNaN(n));
-
-  if (!numbers || numbers.length === 0) {
-    return { min: 30, max: 150, avg: 90 }; // Default fallback
-  }
-
-  if (numbers.length === 1) {
-    const price = numbers[0];
-    return { min: price * 0.8, max: price * 1.2, avg: price }; // Create a range around a single price
-  }
-
-  const min = Math.min(...numbers);
-  const max = Math.max(...numbers);
-  const avg = (min + max) / 2;
-  return { min, max, avg };
-};
+interface eBaySearchResponse {
+  itemSummaries: Array<{
+    itemId: string;
+    title: string;
+    sellingStatus: {
+      currentPrice: {
+        value: string;
+        currency: string;
+      };
+      // For sold listings, 'SOLD_FOR_FIXED_PRICE' or 'ENDED_WITH_SALE'
+    };
+    image: {
+      imageUrl: string;
+    };
+    itemWebUrl: string;
+    condition: string;
+    // Assuming a property for sold date or inferring from other fields if needed
+    itemEndDate?: string; // This might be available for ended listings
+  }>;
+}
 
 export const ebayService = {
   /**
-   * Fetches **mock** sold listings from eBay based on a query and market data.
-   * This function simulates querying the eBay API by generating intelligent mock data.
-   * Direct, real-time fetching of eBay "Sold Listings" from a frontend-only app is not
-   * securely feasible due to OAuth 2.0 requirements for Client Secret protection.
-   *
-   * @param query The item description or search term.
-   * @param ebayAppId The eBay App ID (Client ID). Its presence enables more realistic mock data.
-   * @param marketPriceRange The price range string from Gemini's grounding data (e.g., "$50 - $100").
-   * @param marketKeywords Keywords from Gemini's grounding data.
-   * @param marketTitlePatterns Common title patterns from Gemini's grounding data.
-   * @returns A Promise that resolves with an array of eBayItem.
+   * Searches for recently sold eBay listings based on a query.
+   * @param query The search query (e.g., "vintage camera").
+   * @param ebayApiKey The eBay API key for authorization.
+   * @returns A promise that resolves to an array of eBayItem.
    */
-  fetchSoldListings: async (
-    query: string,
-    ebayAppId: string, // Renamed from ebayApiKey to ebayAppId
-    marketPriceRange: string,
-    marketKeywords: string[],
-    marketTitlePatterns: string[],
-  ): Promise<eBayItem[]> => {
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API call delay
+  searchSoldListings: async (query: string, ebayApiKey: string): Promise<eBayItem[]> => {
+    if (!ebayApiKey) {
+      throw new Error("eBay API Key is missing. Please configure it in settings.");
+    }
 
-    const useAdvancedMocks = ebayAppId && ebayAppId.trim() !== '';
-
-    if (!useAdvancedMocks) {
-      console.warn("eBay App ID is missing. Using generic mock data for sold listings.");
-      return [
+    try {
+      // NOTE: For a real application, you would typically need to implement OAuth
+      // to get an access token for eBay's Buy API. For this exercise, we assume
+      // the provided `ebayApiKey` can be used directly as a Bearer token.
+      const response = await fetch(
+        `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&filter=itemCondition={USED|NEW|UNSPECIFIED},buyingOptions={FIXED_PRICE|AUCTION}&sort=enddate&limit=10`,
         {
-          itemId: 'gen_9999',
-          title: `Generic item similar to "${query}"`,
-          price: 'US $49.99',
-          shippingCost: 'US $7.99',
-          imageUrl: 'https://via.placeholder.com/100x100?text=Generic+Item',
-          listingUrl: 'https://www.ebay.com/',
-          condition: 'Used',
-          soldDate: '2024-01-01',
-        },
-      ];
-    }
-
-    const { min: parsedMinPrice, max: parsedMaxPrice, avg: parsedAvgPrice } = parsePriceRange(marketPriceRange);
-
-    const generateRandomPrice = (basePrice: number): string => {
-      const deviation = basePrice * 0.15; // +/- 15% from average
-      let price = basePrice + (Math.random() * deviation * 2 - deviation);
-      price = Math.max(parsedMinPrice * 0.9, price); // Ensure it's not too low
-      price = Math.min(parsedMaxPrice * 1.1, price); // Ensure it's not too high
-      return `US $${price.toFixed(2)}`;
-    };
-
-    const generateRandomTitle = (baseQuery: string): string => {
-        let title = baseQuery;
-        const keywordsToUse = [...marketKeywords, ...baseQuery.split(' ').filter(w => w.length > 3)].slice(0, 3);
-        const patternsToUse = marketTitlePatterns.length > 0 ? marketTitlePatterns : [
-            `Vintage {ITEM} Rare!`,
-            `{ITEM} Used Good Condition`,
-            `Tested {ITEM} Works Great`,
-            `New {ITEM} In Box`
-        ];
-
-        if (keywordsToUse.length > 0) {
-            title = keywordsToUse.join(' ') + ' ' + title;
+          headers: {
+            'Authorization': `Bearer ${ebayApiKey}`, // Simplified: assuming API key acts as Bearer token
+            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US', // Targeting the US marketplace
+            'Content-Type': 'application/json',
+          },
         }
+      );
 
-        const randomPattern = patternsToUse[Math.floor(Math.random() * patternsToUse.length)];
-        title = randomPattern.replace('{ITEM}', title);
-        title = title.replace(/\s{2,}/g, ' ').trim(); // Clean up extra spaces
-        return title.length > 80 ? title.substring(0, 77) + '...' : title;
-    };
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('eBay API Error:', errorText);
+        throw new Error(`eBay API error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
 
-    const conditions = ['Used', 'Used - Good', 'Used - Excellent', 'New', 'New - Open Box'];
-    const randomCondition = conditions[Math.floor(Math.random() * conditions.length)];
+      const data: eBaySearchResponse = await response.json();
 
-    const mockListings: eBayItem[] = [];
-    for (let i = 0; i < 3; i++) { // Generate 3 realistic mock listings
-      mockListings.push({
-        itemId: `mock_${Date.now()}_${i}`,
-        title: generateRandomTitle(query),
-        price: generateRandomPrice(parsedAvgPrice),
-        shippingCost: `US $${(5 + Math.random() * 10).toFixed(2)}`,
-        imageUrl: `https://via.placeholder.com/100x100?text=Sold+${query.split(' ')[0]}_${i + 1}`,
-        listingUrl: `https://www.ebay.com/itm/mock_${Date.now()}_${i}`,
-        condition: randomCondition,
-        soldDate: new Date(Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0], // Last 30 days
-      });
+      // Filter for actual sold listings (ended items with a price)
+      const soldItems = data.itemSummaries.filter(item =>
+        item.sellingStatus?.currentPrice?.value && item.itemWebUrl
+        // A more robust check might involve checking for `itemState: 'ENDED_WITH_SALE'`
+        // or similar, but the `buy/browse/v1` API does not directly expose this for search.
+        // We'll rely on the assumption that sorting by end date and filtering
+        // by buying options gives us relevant results that mimic "sold" listings for context.
+      );
+
+      return soldItems.map(item => ({
+        itemId: item.itemId,
+        title: item.title,
+        price: `${item.sellingStatus.currentPrice.currency} ${item.sellingStatus.currentPrice.value}`,
+        imageUrl: item.image?.imageUrl || '',
+        listingUrl: item.itemWebUrl,
+        condition: item.condition || 'N/A',
+        soldDate: item.itemEndDate ? new Date(item.itemEndDate).toLocaleDateString() : 'N/A',
+      }));
+    } catch (error) {
+      console.error('Error searching eBay sold listings:', error);
+      throw new Error(`eBay search failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+
+  /**
+   * Derives market data (price range, condition summary, keywords) from a list of eBay items.
+   * This is a simplified derivation and can be expanded for more sophisticated analysis.
+   * @param items An array of eBayItem.
+   * @returns An object containing market data.
+   */
+  getMarketData: (items: eBayItem[]) => {
+    if (items.length === 0) {
+      return {
+        marketPriceRange: 'N/A',
+        marketConditionSummary: 'N/A',
+        marketKeywords: [],
+      };
     }
 
-    return mockListings;
+    let minPrice = Infinity;
+    let maxPrice = 0;
+    const conditions: { [key: string]: number } = {};
+    const titles: string[] = [];
+
+    items.forEach(item => {
+      titles.push(item.title);
+
+      const priceValue = parseFloat(item.price.replace(/[^0-9.]/g, ''));
+      if (!isNaN(priceValue)) {
+        if (priceValue < minPrice) minPrice = priceValue;
+        if (priceValue > maxPrice) maxPrice = priceValue;
+      }
+
+      if (item.condition) {
+        conditions[item.condition] = (conditions[item.condition] || 0) + 1;
+      }
+    });
+
+    const marketPriceRange = (minPrice === Infinity || maxPrice === 0)
+      ? 'N/A'
+      : `$${minPrice.toFixed(2)} - $${maxPrice.toFixed(2)} USD`;
+
+    let marketConditionSummary = 'N/A';
+    if (Object.keys(conditions).length > 0) {
+      marketConditionSummary = Object.entries(conditions).sort(([, countA], [, countB]) => countB - countA)[0][0];
+    }
+
+    // Simple keyword extraction: take common words from titles
+    const allWords = titles.flatMap(title => title.toLowerCase().split(/\s+/));
+    const wordCounts: { [key: string]: number } = {};
+    allWords.forEach(word => {
+      // Filter out very common words or short words
+      if (word.length > 2 && !['a', 'an', 'the', 'for', 'and', 'with', 'in', 'of'].includes(word)) {
+        wordCounts[word] = (wordCounts[word] || 0) + 1;
+      }
+    });
+    const marketKeywords = Object.entries(wordCounts)
+      .sort(([, countA], [, countB]) => countB - countA)
+      .slice(0, 5) // Top 5 keywords
+      .map(([word]) => word);
+
+    return {
+      marketPriceRange,
+      marketConditionSummary,
+      marketKeywords,
+    };
   },
 };

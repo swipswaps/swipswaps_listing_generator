@@ -29,5 +29,5 @@ export interface ListingDraft {
 
 export interface ApiKeys {
   chatGptApiKey: string;
-  ebayAppId: string; // Renamed from ebayApiKey to ebayAppId (Client ID)
+  ebayApiKey: string;
 }
