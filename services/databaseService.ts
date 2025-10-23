@@ -15,10 +15,17 @@ export const databaseService = {
   loadApiKeys: (): ApiKeys => {
     try {
       const storedKeys = localStorage.getItem(API_KEYS_STORAGE_KEY);
-      return storedKeys ? JSON.parse(storedKeys) : { chatGptApiKey: '', ebayApiKey: '' };
+      // Ensure the structure matches the new ApiKeys interface if old data exists
+      const parsedKeys = storedKeys ? JSON.parse(storedKeys) : { chatGptApiKey: '', ebayAppId: '' };
+      // Handle potential legacy `ebayApiKey` in localStorage by mapping it to `ebayAppId`
+      if (parsedKeys.ebayApiKey !== undefined && parsedKeys.ebayAppId === undefined) {
+          parsedKeys.ebayAppId = parsedKeys.ebayApiKey;
+          delete parsedKeys.ebayApiKey;
+      }
+      return parsedKeys;
     } catch (error) {
       console.error('Error loading API keys from localStorage:', error);
-      return { chatGptApiKey: '', ebayApiKey: '' };
+      return { chatGptApiKey: '', ebayAppId: '' };
     }
   },
 

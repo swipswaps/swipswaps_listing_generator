@@ -1,16 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ListingDraft, eBayItem, GroundingSource } from '../types';
-import { databaseService } from '../services/databaseService';
+// Fix: Implement the ListingGenerator component.
+import React, { useState, useEffect } from 'react';
+import { eBayItem, ListingDraft, GroundingSource } from '../types';
 import { ebayService } from '../services/ebayService';
 import { chatGptService } from '../services/chatGptService';
+import { databaseService } from '../services/databaseService';
 import { geminiService } from '../services/geminiService'; // Import geminiService for grounding
 
 interface ListingGeneratorProps {
   itemDescription: string;
   itemCategory: string;
-  base64Image: string; // Not directly used here, but passed to ListingDraft
-  imageUrl: string; // Used for displaying and passing to ListingDraft
-  ebayApiKey: string;
+  base64Image: string;
+  imageUrl: string;
+  ebayAppId: string; // Renamed from ebayApiKey to ebayAppId
   chatGptApiKey: string;
   onListingGenerated: (listing: ListingDraft) => void;
 }
@@ -19,196 +20,285 @@ const ListingGenerator: React.FC<ListingGeneratorProps> = ({
   itemDescription,
   itemCategory,
   imageUrl,
-  ebayApiKey,
+  ebayAppId, // Renamed from ebayApiKey
   chatGptApiKey,
   onListingGenerated,
 }) => {
+  const [soldListings, setSoldListings] = useState<eBayItem[]>([]);
+  const [generatedDraft, setGeneratedDraft] = useState<ListingDraft | null>(null);
   const [isLoadingGrounding, setIsLoadingGrounding] = useState<boolean>(false);
   const [isLoadingSoldListings, setIsLoadingSoldListings] = useState<boolean>(false);
   const [isLoadingChatGpt, setIsLoadingChatGpt] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [generatedListing, setGeneratedListing] = useState<ListingDraft | null>(null);
 
-  // States for market grounding data
+  // States for market data from Gemini grounding
   const [groundingPriceRange, setGroundingPriceRange] = useState<string>('N/A');
   const [groundingConditionSummary, setGroundingConditionSummary] = useState<string>('N/A');
   const [groundingKeywords, setGroundingKeywords] = useState<string[]>([]);
+  const [marketTitlePatterns, setMarketTitlePatterns] = useState<string[]>([]);
   const [groundingSources, setGroundingSources] = useState<GroundingSource[]>([]);
-  const [fetchedSoldListings, setFetchedSoldListings] = useState<eBayItem[]>([]);
 
+  // State for editable fields, initialized after generation
+  const [editableTitle, setEditableTitle] = useState('');
+  const [editableDescription, setEditableDescription] = useState('');
+  const [editableCategory, setEditableCategory] = useState('');
+  const [editablePriceRange, setEditablePriceRange] = useState('');
+  const [editableCondition, setEditableCondition] = useState('');
 
-  const generateListingDraft = useCallback(async () => {
+  const generateListing = async () => {
+    setIsLoadingGrounding(true);
+    setIsLoadingSoldListings(false); // Reset other loading states
+    setIsLoadingChatGpt(false);
     setError(null);
-    setGeneratedListing(null);
+    setGeneratedDraft(null);
+    setSoldListings([]);
+    setGroundingPriceRange('N/A');
+    setGroundingConditionSummary('N/A');
+    setGroundingKeywords([]);
+    setMarketTitlePatterns([]);
+    setGroundingSources([]);
 
     try {
       // 1. Perform Market Research (Gemini Grounding)
-      setIsLoadingGrounding(true);
-      const groundingData = await geminiService.fetchEbayGroundingData(itemDescription);
-      setGroundingPriceRange(groundingData.priceRange);
-      setGroundingConditionSummary(groundingData.conditionSummary);
-      setGroundingKeywords(groundingData.keywords);
-      setGroundingSources(groundingData.groundingSources);
+      const marketData = await geminiService.fetchEbayGroundingData(itemDescription);
+      setGroundingPriceRange(marketData.priceRange);
+      setGroundingConditionSummary(marketData.conditionSummary);
+      setGroundingKeywords(marketData.keywords);
+      setMarketTitlePatterns(marketData.marketTitlePatterns);
+      setGroundingSources(marketData.groundingSources);
+      
       setIsLoadingGrounding(false);
-
-      // 2. Fetch sold listings from eBay (informed by grounding data)
       setIsLoadingSoldListings(true);
+
+      // 2. Fetch Example Sold Listings (eBay Service - now a smart mock informed by grounding)
       const listings = await ebayService.fetchSoldListings(
         itemDescription,
-        ebayApiKey,
-        groundingData.priceRange,
-        groundingData.keywords
+        ebayAppId, // Pass ebayAppId
+        marketData.priceRange,
+        marketData.keywords,
+        marketData.marketTitlePatterns,
       );
-      setFetchedSoldListings(listings);
+      setSoldListings(listings);
+
       setIsLoadingSoldListings(false);
+      setIsLoadingChatGpt(true);
 
+      // 3. Generate listing draft using the chatGptService (LLM) or fallback
       let draft: ListingDraft;
-
-      // 3. Generate listing draft using ChatGPT (if key available) or fallback
-      if (chatGptApiKey) {
-        setIsLoadingChatGpt(true);
+      if (chatGptApiKey && chatGptApiKey.trim() !== '') {
         draft = await chatGptService.generateListingDraft(
           itemDescription,
           itemCategory,
           listings,
-          chatGptApiKey,
           imageUrl,
-          groundingData.priceRange,
-          groundingData.conditionSummary,
-          groundingData.keywords,
-          groundingData.groundingSources
+          chatGptApiKey,
+          marketData.priceRange,
+          marketData.conditionSummary,
+          marketData.keywords,
+          marketData.marketTitlePatterns,
+          marketData.groundingSources,
         );
-        setIsLoadingChatGpt(false);
       } else {
-        // Fallback: Manually construct ListingDraft if ChatGPT key is missing
-        console.warn("ChatGPT API Key missing. Generating basic listing draft without ChatGPT.");
+        // Fallback: Construct draft using Gemini's market data directly
+        const primaryItemDescription = itemDescription.split('\n')[0].replace('Item:', '').trim();
+        const additionalDetails = itemDescription.split('\n').slice(1).join('\n').trim();
 
-        const primaryDescription = itemDescription;
-        const additionalDetails = groundingData.keywords.length > 0 ? `Key features/search terms: ${groundingData.keywords.join(', ')}.` : '';
+        const defaultTitle = (marketData.marketTitlePatterns && marketData.marketTitlePatterns.length > 0)
+          ? marketData.marketTitlePatterns[Math.floor(Math.random() * marketData.marketTitlePatterns.length)].replace('{ITEM}', primaryItemDescription)
+          : `${primaryItemDescription} - ${marketData.conditionSummary} - Rare Find!`;
 
+        const defaultDescription = `This is a highly sought-after ${primaryItemDescription}. ${additionalDetails ? `It features: ${additionalDetails}.` : ''} Based on recent market analysis, similar items have sold for ${marketData.priceRange} in ${marketData.conditionSummary} condition. This particular piece is perfect for collectors or enthusiasts. Key selling points include: ${marketData.keywords.join(', ')}. A truly unique opportunity!`;
+        
         draft = {
-          itemDescription: `This is a ${groundingData.conditionSummary.toLowerCase()} ${primaryDescription} for sale. ${additionalDetails}
-          Carefully inspected and ready for a new owner. Refer to photos for exact condition.`,
-          suggestedTitle: `${primaryDescription} - ${groundingData.keywords[0] || itemCategory} - ${groundingData.conditionSummary.split(' - ')[0] || 'Used'}`,
+          itemDescription: defaultDescription,
+          suggestedTitle: defaultTitle,
           suggestedCategory: itemCategory,
-          suggestedPriceRange: groundingData.priceRange,
-          suggestedCondition: groundingData.conditionSummary.split(' - ')[0] || 'Used', // Take first part like "Used"
+          suggestedPriceRange: marketData.priceRange,
+          suggestedCondition: marketData.conditionSummary,
           exampleSoldListings: listings,
-          generatedDate: new Date().toLocaleDateString(),
+          generatedDate: new Date().toLocaleString(),
           imageUrl: imageUrl,
-          groundingSources: groundingData.groundingSources,
+          groundingSources: marketData.groundingSources,
         };
       }
 
-      setGeneratedListing(draft);
-      databaseService.saveListing(draft); // Save to history
-      onListingGenerated(draft); // Notify parent component
-    } catch (e) {
-      setError(`Failed to generate listing: ${e instanceof Error ? e.message : String(e)}`);
-      console.error('Listing generation error:', e);
+      setGeneratedDraft(draft);
+      onListingGenerated(draft);
+
+      // Initialize editable fields with generated draft data
+      setEditableTitle(draft.suggestedTitle);
+      setEditableDescription(draft.itemDescription);
+      setEditableCategory(draft.suggestedCategory);
+      setEditablePriceRange(draft.suggestedPriceRange);
+      setEditableCondition(draft.suggestedCondition);
+
+      databaseService.saveListing(draft);
+
+    } catch (err) {
+      setError(`Listing generation error: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(err);
     } finally {
       setIsLoadingGrounding(false);
       setIsLoadingSoldListings(false);
       setIsLoadingChatGpt(false);
     }
-  }, [itemDescription, itemCategory, ebayApiKey, chatGptApiKey, imageUrl, onListingGenerated]);
+  };
 
   useEffect(() => {
-    // Trigger generation when itemDescription or itemCategory changes
-    // Also re-trigger if API keys change (so the user can switch between ChatGPT / fallback)
     if (itemDescription && itemCategory) {
-      generateListingDraft();
+      generateListing();
     }
-  }, [itemDescription, itemCategory, ebayApiKey, chatGptApiKey, generateListingDraft]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemDescription, itemCategory, ebayAppId, chatGptApiKey]); // Re-run if item/category or API keys change
 
-  const isLoading = isLoadingGrounding || isLoadingSoldListings || isLoadingChatGpt;
+  const handleSaveEditedListing = () => {
+    if (generatedDraft) {
+      const updatedListing: ListingDraft = {
+        ...generatedDraft,
+        suggestedTitle: editableTitle,
+        itemDescription: editableDescription,
+        suggestedCategory: editableCategory,
+        suggestedPriceRange: editablePriceRange,
+        suggestedCondition: editableCondition,
+      };
+      // For simplicity, we'll just save it again.
+      databaseService.saveListing(updatedListing);
+      setGeneratedDraft(updatedListing); // Update current view
+      alert('Listing saved successfully!');
+    }
+  };
+
+  const isAnyLoading = isLoadingGrounding || isLoadingSoldListings || isLoadingChatGpt;
 
   return (
-    <div className="flex flex-col p-4 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-800 space-y-4 h-full">
-      <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">eBay Listing Draft</h2>
+    <div className="p-4 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-800 flex flex-col space-y-4">
+      <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">eBay Listing Assistant</h2>
 
-      {isLoading && (
-        <div className="flex flex-col items-center justify-center space-y-2 text-blue-600 dark:text-blue-400">
-          <svg className="animate-spin h-5 w-5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          {isLoadingGrounding && <span>Performing market research with Gemini...</span>}
-          {!isLoadingGrounding && isLoadingSoldListings && <span>Fetching example eBay listings...</span>}
-          {!isLoadingGrounding && !isLoadingSoldListings && isLoadingChatGpt && <span>Generating listing draft with ChatGPT...</span>}
-          {!isLoadingGrounding && !isLoadingSoldListings && !isLoadingChatGpt && <span>Generating listing draft...</span>} {/* Fallback if no specific step is loading */}
+      {isAnyLoading && (
+        <div className="flex flex-col items-center justify-center p-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 dark:border-blue-400"></div>
+          {isLoadingGrounding && <p className="ml-3 text-blue-600 dark:text-blue-400 mt-2">Performing market research with Gemini...</p>}
+          {isLoadingSoldListings && <p className="ml-3 text-blue-600 dark:text-blue-400 mt-2">Fetching comparable sold listings...</p>}
+          {isLoadingChatGpt && <p className="ml-3 text-blue-600 dark:text-blue-400 mt-2">Generating listing draft...</p>}
         </div>
       )}
 
       {error && (
-        <p className="text-red-500 dark:text-red-400 text-sm">{error}</p>
+        <p className="text-red-500 dark:text-red-400 text-sm mt-2">{error}</p>
       )}
 
-      {generatedListing && (
-        <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-md space-y-3 flex-grow overflow-auto text-gray-800 dark:text-gray-100">
-          <h3 className="text-lg font-bold">{generatedListing.suggestedTitle}</h3>
-          {generatedListing.imageUrl && (
-            <div className="flex justify-center my-3">
-              <img src={generatedListing.imageUrl} alt="Generated Listing Item" className="max-h-48 rounded-md shadow-sm border border-gray-200 dark:border-gray-600" />
+      {!generatedDraft && !isAnyLoading && (
+        <div className="text-gray-600 dark:text-gray-300 text-center p-4">
+          <p>Item identified. Generating a listing draft and researching sold items...</p>
+        </div>
+      )}
+
+      {generatedDraft && (
+        <div className="space-y-6">
+          <div className="p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-700 rounded-md">
+            <h3 className="text-lg font-bold text-green-800 dark:text-green-200 mb-2">Generated Listing Draft</h3>
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="editableTitle" className="block text-sm font-medium text-gray-700 dark:text-gray-200">Suggested Title:</label>
+                <input
+                  type="text"
+                  id="editableTitle"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  value={editableTitle}
+                  onChange={(e) => setEditableTitle(e.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="editableCategory" className="block text-sm font-medium text-gray-700 dark:text-gray-200">Suggested Category:</label>
+                <input
+                  type="text"
+                  id="editableCategory"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  value={editableCategory}
+                  onChange={(e) => setEditableCategory(e.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="editablePriceRange" className="block text-sm font-medium text-gray-700 dark:text-gray-200">Suggested Price Range:</label>
+                <input
+                  type="text"
+                  id="editablePriceRange"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  value={editablePriceRange}
+                  onChange={(e) => setEditablePriceRange(e.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="editableCondition" className="block text-sm font-medium text-gray-700 dark:text-gray-200">Suggested Condition:</label>
+                <input
+                  type="text"
+                  id="editableCondition"
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  value={editableCondition}
+                  onChange={(e) => setEditableCondition(e.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="editableDescription" className="block text-sm font-medium text-gray-700 dark:text-gray-200">Item Description:</label>
+                <textarea
+                  id="editableDescription"
+                  rows={6}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  value={editableDescription}
+                  onChange={(e) => setEditableDescription(e.target.value)}
+                ></textarea>
+              </div>
+              <button
+                onClick={handleSaveEditedListing}
+                className="w-full px-4 py-2 bg-purple-600 text-white rounded-md shadow hover:bg-purple-700 transition-colors duration-200 mt-4"
+              >
+                Save Edited Listing
+              </button>
             </div>
-          )}
-          <p><strong>Category:</strong> {generatedListing.suggestedCategory}</p>
-          <p><strong>Condition:</strong> {generatedListing.suggestedCondition}</p>
-          <p><strong>Price Range:</strong> {generatedListing.suggestedPriceRange}</p>
-          <div>
-            <strong>Description:</strong>
-            <p className="whitespace-pre-wrap text-sm">{generatedListing.itemDescription}</p>
           </div>
 
-          {generatedListing.exampleSoldListings && generatedListing.exampleSoldListings.length > 0 && (
-            <div className="mt-4">
-              <h4 className="font-semibold mb-2">Comparable Sold Listings:</h4>
-              <ul className="list-disc list-inside text-sm text-gray-700 dark:text-gray-200 space-y-1">
-                {generatedListing.exampleSoldListings.map((item, idx) => (
+          {soldListings.length > 0 && (
+            <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-700">
+              <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">Comparable Sold Listings (Simulated)</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {soldListings.map(item => (
+                  <div key={item.itemId} className="flex items-center space-x-3 p-2 border border-gray-200 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800">
+                    <img src={item.imageUrl} alt={item.title} className="w-16 h-16 object-cover rounded" />
+                    <div>
+                      <a href={item.listingUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline font-medium text-sm">
+                        {item.title}
+                      </a>
+                      <p className="text-xs text-gray-600 dark:text-gray-300">Price: {item.price}</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-300">Condition: {item.condition}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Sold: {item.soldDate}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {generatedDraft.groundingSources && generatedDraft.groundingSources.length > 0 && (
+            <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-700">
+              <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">Grounding Sources (from Google Search)</h3>
+              <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 dark:text-gray-200">
+                {generatedDraft.groundingSources.map((source, idx) => (
                   <li key={idx}>
-                    <a href={item.listingUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-                      {item.title}
-                    </a> ({item.price} {item.shippingCost && `+ ${item.shippingCost}`}) - {item.soldDate} ({item.condition})
+                    {source.title ? (
+                      <a href={source.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                        {source.title}
+                      </a>
+                    ) : (
+                      <a href={source.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                        {source.uri}
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>
             </div>
           )}
-           {generatedListing.groundingSources && generatedListing.groundingSources.length > 0 && (
-            <div className="mt-4">
-              <h4 className="font-semibold mb-2">Grounding Sources (from Google Search):</h4>
-              <ul className="list-disc list-inside text-sm text-gray-700 dark:text-gray-200 space-y-1">
-                {generatedListing.groundingSources.map((source, idx) => (
-                  <li key={idx} className="flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-4 h-4 mr-1 text-gray-500 dark:text-gray-400 flex-shrink-0">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
-                    </svg>
-                    <a href={source.uri} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline break-all">
-                      {source.title || source.uri}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">Generated: {generatedListing.generatedDate}</p>
         </div>
-      )}
-
-      {!isLoading && !generatedListing && !error && (
-        <div className="text-gray-600 dark:text-gray-300 text-center flex-grow flex items-center justify-center">
-          <p>Click "Identify Item with Gemini" to start generating your listing draft.</p>
-        </div>
-      )}
-
-      {/* Re-generate button for convenience */}
-      {!isLoading && (
-        <button
-          onClick={generateListingDraft}
-          className="w-full px-5 py-2 bg-purple-600 text-white rounded-md shadow hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 mt-auto"
-        >
-          Re-generate Listing Draft
-        </button>
       )}
     </div>
   );

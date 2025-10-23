@@ -4,8 +4,6 @@ import ListingGenerator from './components/ListingGenerator';
 import SettingsModal from './components/SettingsModal';
 import HistoryModal from './components/HistoryModal';
 import { geminiService } from './services/geminiService';
-import { ebayService } from './services/ebayService'; // Added import
-import { chatGptService } from './services/chatGptService'; // Added import
 import { databaseService } from './services/databaseService';
 import { ApiKeys, ListingDraft } from './types';
 
@@ -78,7 +76,7 @@ const App: React.FC = () => {
         setItemDescriptionFromGemini(descriptionMatch[1].trim());
         setItemCategoryFromGemini(categoryMatch[1].trim());
       } else {
-        setGeminiError('Could not parse Gemini\'s response into description and category.');
+        setGeminiError('Could not parse Gemini\'s response into description and category. Expected format: "Item: [Description]\\nCategory: [Category]"');
         console.error('Gemini response format issue:', result);
       }
     } catch (error) {
@@ -95,11 +93,8 @@ const App: React.FC = () => {
 
   const handleSaveApiKeys = useCallback((newKeys: ApiKeys) => {
     setApiKeys(newKeys);
-    // If an item was already identified, trigger re-generation with new keys
-    if (itemDescriptionFromGemini && itemCategoryFromGemini && selectedImageUrl && selectedBase64Image) {
-      setCurrentListing(null); // Reset to show loading for new generation
-    }
-  }, [itemDescriptionFromGemini, itemCategoryFromGemini, selectedImageUrl, selectedBase64Image]);
+    // ListingGenerator's useEffect will handle re-generation if its props (API keys) change.
+  }, []);
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-4xl min-h-[80vh] flex flex-col space-y-8 text-gray-900 dark:text-gray-100">
@@ -173,7 +168,7 @@ const App: React.FC = () => {
               itemCategory={itemCategoryFromGemini}
               base64Image={selectedBase64Image}
               imageUrl={selectedImageUrl}
-              ebayApiKey={apiKeys.ebayApiKey}
+              ebayAppId={apiKeys.ebayAppId} // Pass ebayAppId
               chatGptApiKey={apiKeys.chatGptApiKey}
               onListingGenerated={handleListingGenerated}
             />
