@@ -6,6 +6,13 @@ export default defineConfig(({ mode }) => {
   // The third parameter '' ensures all environment variables are loaded, not just those prefixed with VITE_
   const env = loadEnv(mode, process.cwd(), '');
 
+  console.log('--- Vite Config Debugging ---');
+  console.log('Mode:', mode);
+  console.log('process.cwd():', process.cwd());
+  console.log('env.VITE_API_KEY (from loadEnv):', env.VITE_API_KEY);
+  console.log('Result of JSON.stringify(env.VITE_API_KEY):', JSON.stringify(env.VITE_API_KEY));
+  console.log('--- End Vite Config Debugging ---');
+
   return {
     plugins: [react()],
     define: {

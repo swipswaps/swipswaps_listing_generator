@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Modality } from '@google/genai';
 
 // Utility function to convert a Blob (e.g., File) to a Base64 string.
@@ -24,13 +23,6 @@ export const geminiService = {
    * @returns A string containing the identified item description and category.
    */
   discernItemFromImage: async (base64Image: string, mimeType: string): Promise<string> => {
-    // --- START DIAGNOSTIC LOG ---
-    console.log('--- Debugging Gemini API Key in geminiService.ts ---');
-    console.log('process.env.API_KEY:', process.env.API_KEY);
-    console.log('--- End Debugging Gemini API Key ---');
-    // --- END DIAGNOSTIC LOG ---
-
-    // Initialize GoogleGenAI with the API key from environment variables.
     // As per @google/genai coding guidelines, API_KEY must be obtained exclusively from process.env.API_KEY.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
