@@ -23,28 +23,19 @@ export const geminiService = {
    * @returns A string containing the identified item description and category.
    */
   discernItemFromImage: async (base64Image: string, mimeType: string): Promise<string> => {
-    // --- START BROWSER CONSOLE DIAGNOSTIC LOG (for `services/geminiService.ts`) ---
-    console.log('--- Browser Console Debugging (geminiService.ts) ---');
-    const apiKeyFromEnv = process.env.API_KEY;
-    console.log('process.env.API_KEY (raw):', apiKeyFromEnv);
-    console.log('typeof process.env.API_KEY:', typeof apiKeyFromEnv);
-    // Attempt to slice/mask a portion if it's a string and has sufficient length
-    console.log('process.env.API_KEY (masked/full):', typeof apiKeyFromEnv === 'string' && apiKeyFromEnv.length > 10
-      ? apiKeyFromEnv.substring(0, 5) + '...' + apiKeyFromEnv.substring(apiKeyFromEnv.length - 5)
-      : apiKeyFromEnv
-    );
-    console.log('--- End Browser Console Debugging ---');
-    // --- END BROWSER CONSOLE DIAGNOSTIC LOG ---
+    // Fix: Use type assertion to properly access import.meta.env in Vite.
+    // This explicitly tells TypeScript that 'env' is expected to be present on 'ImportMeta'
+    // with string-indexed properties, aligning with how Vite exposes environment variables.
+    const apiKey = (import.meta as ImportMeta & { env: Record<string, string> }).env.VITE_API_KEY;
 
     // Defensive check: Ensure API key is actually present and valid-looking
-    if (!apiKeyFromEnv || typeof apiKeyFromEnv !== 'string' || apiKeyFromEnv.length < 10) {
-      const errorMessage = "Gemini API Key is missing or invalid. Please check your .env.local file and vite.config.ts configuration.";
-      console.error(errorMessage, "Current API Key Value:", apiKeyFromEnv);
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 10) {
+      const errorMessage = "Gemini API Key is missing or invalid. Please check your .env.local file (VITE_API_KEY) and ensure it's loaded correctly.";
+      console.error(errorMessage, "Current API Key Value:", apiKey);
       throw new Error(errorMessage);
     }
 
-    // As per @google/genai coding guidelines, API_KEY must be obtained exclusively from process.env.API_KEY.
-    const ai = new GoogleGenAI({ apiKey: apiKeyFromEnv }); // Use the variable to ensure we log what's used
+    const ai = new GoogleGenAI({ apiKey: apiKey });
 
     try {
       // Call generateContent with the gemini-2.5-flash-image model for image understanding.
