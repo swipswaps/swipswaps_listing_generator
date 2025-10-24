@@ -36,6 +36,13 @@ export const geminiService = {
     console.log('--- End Browser Console Debugging ---');
     // --- END BROWSER CONSOLE DIAGNOSTIC LOG ---
 
+    // Defensive check: Ensure API key is actually present and valid-looking
+    if (!apiKeyFromEnv || typeof apiKeyFromEnv !== 'string' || apiKeyFromEnv.length < 10) {
+      const errorMessage = "Gemini API Key is missing or invalid. Please check your .env.local file and vite.config.ts configuration.";
+      console.error(errorMessage, "Current API Key Value:", apiKeyFromEnv);
+      throw new Error(errorMessage);
+    }
+
     // As per @google/genai coding guidelines, API_KEY must be obtained exclusively from process.env.API_KEY.
     const ai = new GoogleGenAI({ apiKey: apiKeyFromEnv }); // Use the variable to ensure we log what's used
 
