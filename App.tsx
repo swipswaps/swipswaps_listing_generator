@@ -96,17 +96,13 @@ const App: React.FC = () => {
 
   const handleSaveApiKeys = useCallback((newKeys: ApiKeys) => {
     setApiKeys(newKeys);
+    databaseService.saveApiKeys(newKeys); // Persist the updated keys
     // If an item was already identified, trigger re-generation with new keys
-    // This logic might need refinement depending on whether API key changes
-    // should immediately invalidate existing identified item or only affect new generations.
-    // For now, we just ensure the keys are updated. The ListingGenerator re-runs on prop changes.
     if (itemDescriptionFromGemini && itemCategoryFromGemini && selectedBase64Image && selectedMimeType) {
-      // Intentionally not setting currentListing to null here,
-      // as ListingGenerator's useEffect will handle re-generation if its props change.
-      // If the goal is to *force* a re-generation immediately on key change,
-      // a dedicated state or refetch trigger might be needed.
+      // The ListingGenerator's useEffect will re-run when its props (apiKeys) change.
+      // No need to explicitly reset currentListing here unless a full re-render state is desired.
     }
-  }, [itemDescriptionFromGemini, itemCategoryFromGemini, selectedBase64Image, selectedMimeType]); // Included selectedMimeType
+  }, [itemDescriptionFromGemini, itemCategoryFromGemini, selectedBase64Image, selectedMimeType]);
 
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-4xl min-h-[80vh] flex flex-col space-y-8 text-gray-900 dark:text-gray-100">
@@ -180,9 +176,10 @@ const App: React.FC = () => {
               itemCategory={itemCategoryFromGemini}
               base64Image={selectedBase64Image}
               mimeType={selectedMimeType}
-              ebayApiKey={apiKeys.ebayApiKey}
+              ebayOAuthToken={apiKeys.ebayOAuthToken} // Changed prop name and value
               chatGptApiKey={apiKeys.chatGptApiKey}
               onListingGenerated={handleListingGenerated}
+              onUpdateApiKeys={handleSaveApiKeys} // Pass handler to update keys
             />
           ) : (
             <div className="p-4 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-center flex-grow flex items-center justify-center">

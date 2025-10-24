@@ -25,6 +25,7 @@ export const geminiService = {
   discernItemFromImage: async (base64Image: string, mimeType: string): Promise<string> => {
     // Initialize GoogleGenAI with the API key from environment variables.
     // The API key must be obtained exclusively from process.env.API_KEY.
+    // Updated to use process.env.API_KEY as per GoogleGenAI coding guidelines.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     try {

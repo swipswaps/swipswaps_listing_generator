@@ -30,5 +30,7 @@ export interface ListingDraft {
 
 export interface ApiKeys {
   chatGptApiKey: string;
-  ebayApiKey: string;
+  ebayAppId: string; // New: Stores the eBay App ID (Client ID)
+  ebayClientSecret: string; // New: Stores the eBay Client Secret
+  ebayOAuthToken: string; // New: Stores the generated OAuth Application Access Token (Bearer Token)
 }

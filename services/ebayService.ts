@@ -44,19 +44,62 @@ export interface eBayListingFilters {
 
 export const ebayService = {
   /**
+   * Generates an eBay OAuth Application Access Token (Bearer Token) using Client ID and Client Secret.
+   * @param appId The eBay App ID (Client ID).
+   * @param clientSecret The eBay Client Secret.
+   * @returns A promise that resolves to the generated access token string.
+   */
+  generateAccessToken: async (appId: string, clientSecret: string): Promise<string> => {
+    if (!appId || !clientSecret) {
+      throw new Error("Both eBay App ID and Client Secret are required to generate an access token.");
+    }
+
+    try {
+      const credentials = btoa(`${appId}:${clientSecret}`); // Base64 encode App ID and Client Secret
+
+      const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${credentials}`,
+        },
+        body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope%2Fbuy.browse',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({})); // Handle cases where response is not JSON
+        console.error('eBay OAuth Token Generation Error:', response.status, response.statusText, errorData);
+        throw new Error(`eBay OAuth error: ${response.status} ${response.statusText} - ${errorData.error_description || errorData.error || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+      if (!data.access_token) {
+        throw new Error("eBay OAuth response did not contain an access_token.");
+      }
+      return data.access_token;
+    } catch (error: any) { // Catch as 'any' to inspect error.name for TypeError
+      console.error('Error generating eBay access token:', error);
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        throw new Error('eBay token generation failed: Network Error (likely CORS issue). Please ensure your browser allows requests to api.ebay.com, or consider manually generating the token if running locally without a proxy. More info: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS');
+      }
+      throw new Error(`eBay token generation failed: ${error.message || String(error)}`);
+    }
+  },
+
+  /**
    * Searches for recently sold eBay listings based on a query with optional filters.
    * @param query The search query (e.g., "vintage camera").
-   * @param ebayApiKey The eBay API key for authorization.
+   * @param ebayOAuthToken The generated eBay OAuth Application Access Token (Bearer Token).
    * @param filters Optional filters for the search.
    * @returns A promise that resolves to an array of eBayItem.
    */
   searchSoldListings: async (
     query: string,
-    ebayApiKey: string,
+    ebayOAuthToken: string, // Changed from ebayApiKey
     filters?: eBayListingFilters
   ): Promise<eBayItem[]> => {
-    if (!ebayApiKey) {
-      throw new Error("eBay API Key is missing. Please configure it in settings.");
+    if (!ebayOAuthToken) {
+      throw new Error("eBay OAuth Access Token is missing. Please generate it in settings.");
     }
 
     try {
@@ -73,23 +116,11 @@ export const ebayService = {
 
       const filterString = filterParams.join(',');
 
-      // Note on 'sold items within the last 30 days':
-      // The buy/browse/v1/item_summary/search API does not have a direct filter
-      // for a specific 'sold date range'. The current approach of `sort=enddate`
-      // and `limit=10` effectively provides "recent" sold items.
-      // For more precise historical filtering, the eBay Finding API's `findCompletedItems`
-      // would be more suitable but requires a different API integration.
-
-      // Note on 'shipping cost range':
-      // The buy/browse/v1/item_summary/search API does not support filtering by
-      // shipping cost directly in the API request. Any such filtering would need
-      // to occur client-side after fetching the results, which is less efficient.
-
       const response = await fetch(
         `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent(filterString)}&sort=enddate&limit=10`,
         {
           headers: {
-            'Authorization': `Bearer ${ebayApiKey}`, // Simplified: assuming API key acts as Bearer token
+            'Authorization': `Bearer ${ebayOAuthToken}`, // Use the generated OAuth token
             'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US', // Targeting the US marketplace
             'Content-Type': 'application/json',
           },
@@ -98,7 +129,7 @@ export const ebayService = {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('eBay API Error:', errorText);
+        console.error('eBay API Error:', response.status, response.statusText, errorText);
         throw new Error(`eBay API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
@@ -107,10 +138,6 @@ export const ebayService = {
       // Filter for actual sold listings (ended items with a price)
       const soldItems = data.itemSummaries.filter(item =>
         item.sellingStatus?.currentPrice?.value && item.itemWebUrl
-        // A more robust check might involve checking for `itemState: 'ENDED_WITH_SALE'`
-        // or similar, but the `buy/browse/v1` API does not directly expose this for search.
-        // We'll rely on the assumption that sorting by end date and filtering
-        // by buying options gives us relevant results that mimic "sold" listings for context.
       );
 
       return soldItems.map(item => ({
@@ -122,9 +149,12 @@ export const ebayService = {
         condition: item.condition || 'N/A',
         soldDate: item.itemEndDate ? new Date(item.itemEndDate).toLocaleDateString() : 'N/A',
       }));
-    } catch (error) {
+    } catch (error: any) { // Catch as 'any' to inspect error.name for TypeError
       console.error('Error searching eBay sold listings:', error);
-      throw new Error(`eBay search failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        throw new Error('eBay search failed: Network Error (likely CORS issue). Please ensure your browser allows requests to api.ebay.com, or consider using a proxy if running locally.');
+      }
+      throw new Error(`eBay search failed: ${error.message || String(error)}`);
     }
   },
 
